@@ -201,7 +201,7 @@ START_TEST(test_art_insert_delete)
 END_TEST
 
 int iter_cb(void *data, const unsigned char* key, uint32_t key_len, void *val) {
-    uint64_t *out = data;
+    uint64_t *out = (uint64_t*)data;
     uintptr_t line = (uintptr_t)val;
     uint64_t mask = (line * (key[0] + key_len));
     out[0]++;
@@ -246,11 +246,11 @@ END_TEST
 typedef struct {
     int count;
     int max_count;
-    char **expected;
+    const char **expected;
 } prefix_data;
 
 static int test_prefix_cb(void *data, const unsigned char *k, uint32_t k_len, void *val) {
-    prefix_data *p = data;
+    prefix_data *p = (prefix_data*)data;
     fail_unless(p->count < p->max_count);
     fail_unless(memcmp(k, p->expected[p->count], k_len) == 0,
             "Key: %s Expect: %s", k,
@@ -265,7 +265,7 @@ START_TEST(test_art_iter_prefix)
     int res = art_tree_init(&t);
     fail_unless(res == 0);
 
-    char *s = "api.foo.bar";
+    const char *s = "api.foo.bar";
     fail_unless(NULL == art_insert(&t, (unsigned char*)s, strlen(s)+1, NULL));
 
     s = "api.foo.baz";
@@ -284,13 +284,13 @@ START_TEST(test_art_iter_prefix)
     fail_unless(NULL == art_insert(&t, (unsigned char*)s, strlen(s)+1, NULL));
 
     // Iterate over api
-    char *expected[] = {"api", "api.foe.fum", "api.foo", "api.foo.bar", "api.foo.baz"};
+    const char *expected[] = {"api", "api.foe.fum", "api.foo", "api.foo.bar", "api.foo.baz"};
     prefix_data p = { 0, 5, expected };
     fail_unless(!art_iter_prefix(&t, (unsigned char*)"api", 3, test_prefix_cb, &p));
     fail_unless(p.count == p.max_count, "Count: %d Max: %d", p.count, p.max_count);
 
     // Iterate over 'a'
-    char *expected2[] = {"abc.123.456", "api", "api.foe.fum", "api.foo", "api.foo.bar", "api.foo.baz"};
+    const char *expected2[] = {"abc.123.456", "api", "api.foe.fum", "api.foo", "api.foo.bar", "api.foo.baz"};
     prefix_data p2 = { 0, 6, expected2 };
     fail_unless(!art_iter_prefix(&t, (unsigned char*)"a", 1, test_prefix_cb, &p2));
     fail_unless(p2.count == p2.max_count);
@@ -301,13 +301,13 @@ START_TEST(test_art_iter_prefix)
     fail_unless(p3.count == 0);
 
     // Iterate over api.
-    char *expected4[] = {"api.foe.fum", "api.foo", "api.foo.bar", "api.foo.baz"};
+    const char *expected4[] = {"api.foe.fum", "api.foo", "api.foo.bar", "api.foo.baz"};
     prefix_data p4 = { 0, 4, expected4 };
     fail_unless(!art_iter_prefix(&t, (unsigned char*)"api.", 4, test_prefix_cb, &p4));
     fail_unless(p4.count == p4.max_count, "Count: %d Max: %d", p4.count, p4.max_count);
 
     // Iterate over api.foo.ba
-    char *expected5[] = {"api.foo.bar"};
+    const char *expected5[] = {"api.foo.bar"};
     prefix_data p5 = { 0, 1, expected5 };
     fail_unless(!art_iter_prefix(&t, (unsigned char*)"api.foo.bar", 11, test_prefix_cb, &p5));
     fail_unless(p5.count == p5.max_count, "Count: %d Max: %d", p5.count, p5.max_count);
@@ -334,7 +334,7 @@ START_TEST(test_art_long_prefix)
     fail_unless(res == 0);
 
     uintptr_t v;
-    char *s;
+    const char *s;
 
     s = "this:key:has:a:long:prefix:3";
     v = 3;
@@ -359,7 +359,7 @@ START_TEST(test_art_long_prefix)
     fail_unless(3 == (uintptr_t)art_search(&t, (unsigned char*)s, strlen(s)+1));
 
 
-    char *expected[] = {
+    const char *expected[] = {
         "this:key:has:a:long:common:prefix:1",
         "this:key:has:a:long:common:prefix:2",
         "this:key:has:a:long:prefix:3",
@@ -419,4 +419,34 @@ START_TEST(test_art_insert_search_uuid)
     fail_unless(res == 0);
 }
 END_TEST
+
+START_TEST(test_art_max_prefix_len_scan_prefix)
+{
+    art_tree t;
+    int res = art_tree_init(&t);
+    fail_unless(res == 0);
+
+    char* key1 = "foobarbaz1-test1-foo";
+    fail_unless(NULL == art_insert(&t, (unsigned char*)key1, strlen(key1)+1, NULL));
+
+    char *key2 = "foobarbaz1-test1-bar";
+    fail_unless(NULL == art_insert(&t, (unsigned char*)key2, strlen(key2)+1, NULL));
+
+    char *key3 = "foobarbaz1-test2-foo";
+    fail_unless(NULL == art_insert(&t, (unsigned char*)key3, strlen(key3)+1, NULL));
+
+    fail_unless(art_size(&t) == 3);
+
+    // Iterate over api
+    const char *expected[] = {key2, key1};
+    prefix_data p = { 0, 2, expected };
+    char *prefix = "foobarbaz1-test1";
+    fail_unless(!art_iter_prefix(&t, (unsigned char*)prefix, strlen(prefix), test_prefix_cb, &p));
+    fail_unless(p.count == p.max_count, "Count: %d Max: %d", p.count, p.max_count);
+
+    res = art_tree_destroy(&t);
+    fail_unless(res == 0);
+}
+END_TEST
+
 
